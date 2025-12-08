@@ -10,6 +10,11 @@ $manager_id = $_SESSION['user_id'];
 $manager_name = $conn->query("SELECT username FROM users WHERE id=$manager_id")->fetch_assoc()['username'];
 
 // =====================
+// Branch Selection
+// =====================
+$branch_id = intval($_GET['branch_id'] ?? 1); // default branch 1
+
+// =====================
 // Inventory Operations
 // =====================
 
@@ -17,12 +22,14 @@ $manager_name = $conn->query("SELECT username FROM users WHERE id=$manager_id")-
 if(isset($_POST['add_inventory'])){
     $item_name = $conn->real_escape_string($_POST['item_name']);
     $quantity = intval($_POST['quantity']);
-    $conn->query("INSERT INTO inventory (item_name, quantity, added_by) VALUES ('$item_name', $quantity, $manager_id)");
+    $branch_id_post = intval($_POST['branch_id']);
+    
+    $conn->query("INSERT INTO inventory (item_name, quantity, branch_id, added_by) VALUES ('$item_name', $quantity, $branch_id_post, $manager_id)");
     $inventory_id = $conn->insert_id;
     if($inventory_id > 0){
         $conn->query("INSERT INTO inventory_log (inventory_id, action, quantity_before, quantity_after, changed_by) VALUES ($inventory_id,'added',0,$quantity,$manager_id)");
     }
-    header("Location: manager_dashboard.php"); exit;
+    header("Location: manager_dashboard.php?branch_id=$branch_id_post"); exit;
 }
 
 // Edit inventory
@@ -33,7 +40,7 @@ if(isset($_POST['edit_inventory']) && isset($_POST['id'])){
     $old_qty = $inv_res->num_rows>0 ? $inv_res->fetch_assoc()['quantity'] : 0;
     $conn->query("UPDATE inventory SET quantity=$new_qty WHERE id=$inv_id");
     $conn->query("INSERT INTO inventory_log (inventory_id, action, quantity_before, quantity_after, changed_by) VALUES ($inv_id,'updated',$old_qty,$new_qty,$manager_id)");
-    header("Location: manager_dashboard.php"); exit;
+    header("Location: manager_dashboard.php?branch_id=$branch_id"); exit;
 }
 
 // Delete inventory
@@ -43,36 +50,52 @@ if(isset($_POST['delete_inventory']) && isset($_POST['id'])){
     $old_qty = $inv_res->num_rows>0 ? $inv_res->fetch_assoc()['quantity'] : 0;
     $conn->query("DELETE FROM inventory WHERE id=$inv_id");
     $conn->query("INSERT INTO inventory_log (inventory_id, action, quantity_before, quantity_after, changed_by) VALUES ($inv_id,'deleted',$old_qty,0,$manager_id)");
-    header("Location: manager_dashboard.php"); exit;
+    header("Location: manager_dashboard.php?branch_id=$branch_id"); exit;
 }
 
 // Confirm employee shift
 if(isset($_POST['confirm_shift']) && isset($_POST['attendance_id'])){
     $att_id = intval($_POST['attendance_id']);
     $conn->query("UPDATE attendance SET confirmed=1 WHERE id=$att_id");
-    header("Location: manager_dashboard.php"); exit;
+    header("Location: manager_dashboard.php?branch_id=$branch_id"); exit;
 }
 
 // =====================
 // Fetch Data
 // =====================
 
-// Inventory
-$inventory = $conn->query("SELECT i.*, u.username as added_by_name FROM inventory i JOIN users u ON i.added_by=u.id ORDER BY i.id DESC");
+// Branches
+$branches = $conn->query("SELECT * FROM branches");
+
+// Inventory per branch
+$inventory = $conn->query("SELECT i.*, u.username as added_by_name 
+                           FROM inventory i 
+                           JOIN users u ON i.added_by=u.id 
+                           WHERE i.branch_id=$branch_id 
+                           ORDER BY i.id DESC");
 
 // Inventory log notifications (last 5)
-$notifications = $conn->query("SELECT il.*, u.username as changed_by_name, i.item_name FROM inventory_log il LEFT JOIN inventory i ON il.inventory_id=i.id JOIN users u ON il.changed_by=u.id ORDER BY il.changed_at DESC LIMIT 5");
+$notifications = $conn->query("SELECT il.*, u.username as changed_by_name, i.item_name 
+                               FROM inventory_log il 
+                               LEFT JOIN inventory i ON il.inventory_id=i.id 
+                               JOIN users u ON il.changed_by=u.id 
+                               ORDER BY il.changed_at DESC LIMIT 5");
 
 // Employees currently clocked in
-$employees_clocked_in = $conn->query("SELECT u.id,u.username,a.id as attendance_id,a.clock_in FROM attendance a JOIN users u ON a.user_id=u.id WHERE a.clock_out IS NULL");
+$employees_clocked_in = $conn->query("SELECT u.id,u.username,a.id as attendance_id,a.clock_in,a.confirmed 
+                                      FROM attendance a 
+                                      JOIN users u ON a.user_id=u.id 
+                                      WHERE a.clock_out IS NULL");
 
 // Analytics data
 $inventory_chart=[];
-$res=$conn->query("SELECT item_name, quantity FROM inventory");
+$res=$conn->query("SELECT item_name, quantity FROM inventory WHERE branch_id=$branch_id");
 while($row=$res->fetch_assoc()){$inventory_chart[$row['item_name']]=$row['quantity'];}
 
 $attendance_chart=[];
-$res=$conn->query("SELECT DATE(clock_in) as date, COUNT(*) as total FROM attendance WHERE clock_in>=DATE_SUB(CURDATE(), INTERVAL 7 DAY) GROUP BY DATE(clock_in) ORDER BY DATE(clock_in) ASC");
+$res=$conn->query("SELECT DATE(clock_in) as date, COUNT(*) as total 
+                   FROM attendance WHERE clock_in>=DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
+                   GROUP BY DATE(clock_in) ORDER BY DATE(clock_in) ASC");
 while($row=$res->fetch_assoc()){$attendance_chart[$row['date']]=$row['total'];}
 ?>
 
@@ -90,14 +113,19 @@ tailwind.config={theme:{extend:{colors:{'911-yellow':'#FFD700','911-black':'#121
 
 <div class="max-w-7xl mx-auto p-6">
     <div class="flex items-center justify-center gap-6 p-4 bg-911-black border-b border-911-yellow">
-    <!-- Logo -->
-    <img src="icon.jpg" alt="911 Logo" class="w-24 h-16">
-    
-    <!-- Welcome Message -->
-    <h1 class="text-4xl md:text-5xl font-bold text-911-yellow">
-        Welcome, <?= $manager_name ?>
-    </h1>
-</div>
+        <img src="icon.jpg" alt="911 Logo" class="w-24 h-16">
+        <h1 class="text-4xl md:text-5xl font-bold text-911-yellow">Welcome, <?= $manager_name ?></h1>
+    </div>
+
+    <!-- Branch Selector -->
+    <form method="GET" class="my-4">
+        <label class="text-911-yellow font-bold mr-2">Select Branch:</label>
+        <select name="branch_id" onchange="this.form.submit()" class="px-2 py-1 rounded text-black">
+            <?php while($b = $branches->fetch_assoc()): ?>
+                <option value="<?= $b['id'] ?>" <?= ($b['id']==$branch_id) ? 'selected' : '' ?>><?= $b['name'] ?></option>
+            <?php endwhile; ?>
+        </select>
+    </form>
 
     <!-- Inventory Management -->
     <div class="grid md:grid-cols-2 gap-6 mb-8">
@@ -108,6 +136,14 @@ tailwind.config={theme:{extend:{colors:{'911-yellow':'#FFD700','911-black':'#121
             <form method="POST" class="flex flex-col gap-2">
                 <input type="text" name="item_name" placeholder="Item Name" required class="px-2 py-1 rounded text-black">
                 <input type="number" name="quantity" placeholder="Quantity" required class="px-2 py-1 rounded text-black">
+                <select name="branch_id" required class="px-2 py-1 rounded text-black">
+                    <?php 
+                    $branches_list = $conn->query("SELECT * FROM branches");
+                    while($b = $branches_list->fetch_assoc()){
+                        echo "<option value='{$b['id']}'".($b['id']==$branch_id ? " selected":"").">{$b['name']}</option>";
+                    }
+                    ?>
+                </select>
                 <button type="submit" name="add_inventory" class="bg-911-yellow text-911-black px-4 py-2 rounded">Add</button>
             </form>
         </div>

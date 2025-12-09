@@ -1,98 +1,178 @@
 <?php
 include 'config.php';
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+if(session_status()===PHP_SESSION_NONE){ session_start(); }
 
-// Only allow employees
-if(!isset($_SESSION['user_id']) || $_SESSION['role'] != 'employee'){
-    header("Location: login.php");
-    exit;
+if(!isset($_SESSION['user_id']) || $_SESSION['role']!='employee'){
+    header("Location: login.php"); exit;
 }
 
-$emp_id = $_SESSION['user_id'];
-$employee = $conn->query("SELECT username, pay FROM users WHERE id=$emp_id")->fetch_assoc();
+$user_id = $_SESSION['user_id'];
 
-// Handle clock-in/out
-if(isset($_POST['clock_in'])){
-    $conn->query("INSERT INTO attendance (user_id, clock_in) VALUES ($emp_id, NOW())");
-    header("Location: employee_dashboard.php");
-    exit;
-}
-if(isset($_POST['clock_out'])){
-    // Update latest attendance row with clock_out
-    $conn->query("UPDATE attendance SET clock_out=NOW() WHERE user_id=$emp_id AND clock_out IS NULL ORDER BY id DESC LIMIT 1");
-    header("Location: employee_dashboard.php");
-    exit;
+/* Employee info */
+$user = $conn->query("
+    SELECT u.username, u.daily_rate, b.name AS branch
+    FROM users u
+    JOIN branches b ON u.branch_id=b.id
+    WHERE u.id=$user_id
+")->fetch_assoc();
+
+/* Today's attendance */
+$today = $conn->query("
+    SELECT * FROM attendance
+    WHERE user_id=$user_id AND DATE(clock_in)=CURDATE()
+")->fetch_assoc();
+
+/* Clock in */
+if(isset($_POST['clock_in']) && !$today){
+    $rate = $user['daily_rate'];
+    $conn->query("
+        INSERT INTO attendance (user_id, clock_in, daily_pay)
+        VALUES ($user_id, NOW(), $rate)
+    ");
+    header("Location: employee_dashboard.php"); exit;
 }
 
-// Fetch attendance for this employee
-$attendance = $conn->query("SELECT * FROM attendance WHERE user_id=$emp_id ORDER BY id DESC");
+/* Clock out */
+if(isset($_POST['clock_out']) && $today && !$today['clock_out']){
+    $conn->query("
+        UPDATE attendance SET clock_out=NOW() WHERE id={$today['id']}
+    ");
+    header("Location: employee_dashboard.php"); exit;
+}
+
+/* ✅ Confirmed Monthly Pay (SYNCED WITH ADMIN & MANAGER) */
+$monthly_pay = $conn->query("
+    SELECT IFNULL(SUM(daily_pay),0) AS total
+    FROM attendance
+    WHERE user_id=$user_id
+    AND confirmed=1
+    AND MONTH(clock_in)=MONTH(CURDATE())
+    AND YEAR(clock_in)=YEAR(CURDATE())
+")->fetch_assoc()['total'];
 ?>
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+<meta charset="UTF-8">
 <title>Employee Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.tailwindcss.com"></script>
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: { '911-yellow': '#FFD700', '911-black': '#121212', '911-gray': '#E5E5E5' }
-    }
-  }
-}
-</script>
 </head>
-<body class="bg-911-black text-911-gray min-h-screen">
 
-<div class="max-w-5xl mx-auto p-6">
+<body class="bg-black text-gray-100">
 
-    <!-- Welcome & Pay -->
-    <div class="flex items-center justify-center gap-6 p-4 bg-911-black border-b border-911-yellow">
-    <!-- Logo -->
-    <img src="icon.jpg" alt="911 Logo" class="w-24 h-16">
-    
-    <!-- Welcome Message -->
-    <h1 class="text-4xl md:text-5xl font-bold text-911-yellow">
-        Welcome, <?= ($employee['username']) ?>
-    </h1>
-        <p class="text-911-gray text-xl">Your Pay: <span class="font-bold text-911-yellow"><?= number_format($employee['pay'],2) ?></span></p>
+<div class="w-full min-h-screen px-2 sm:px-4 md:px-6 py-4">
+
+    <!-- Header -->
+    <div class="bg-gray-900 border border-yellow-500 rounded p-4 mb-4 flex justify-between items-center">
+        <div>
+            <h1 class="text-xl font-bold text-yellow-400">Employee Dashboard</h1>
+            <p class="text-sm text-gray-400">
+                <?= htmlspecialchars($user['username']) ?> • <?= htmlspecialchars($user['branch']) ?>
+            </p>
+        </div>
+        <a href="logout.php" class="text-red-500 text-sm">Logout</a>
     </div>
 
-    <!-- Clock-in/out buttons -->
-    <div class="flex justify-center gap-6 mb-8 flex-wrap">
-        <form method="POST">
-            <button type="submit" name="clock_in" class="bg-911-yellow text-911-black px-6 py-3 rounded-lg font-bold hover:brightness-110 transition">Clock In</button>
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+
+        <div class="bg-gray-900 border border-yellow-500 rounded p-4">
+            <p class="text-sm text-gray-400">Confirmed Monthly Pay</p>
+            <p class="text-2xl font-bold text-yellow-400">
+                KSH <?= number_format($monthly_pay,2) ?>
+            </p>
+            <p class="text-xs text-gray-500 mt-1">Confirmed days only</p>
+        </div>
+
+        <div class="bg-gray-900 border border-yellow-500 rounded p-4">
+            <p class="text-sm text-gray-400">Daily Rate</p>
+            <p class="text-xl font-semibold text-gray-100">
+                KSH <?= number_format($user['daily_rate'],2) ?>
+            </p>
+        </div>
+
+        <div class="bg-gray-900 border border-yellow-500 rounded p-4">
+            <p class="text-sm text-gray-400">Today</p>
+            <p class="text-lg font-semibold">
+                <?= $today ? 'Clocked In' : 'Not Clocked In' ?>
+            </p>
+        </div>
+    </div>
+
+    <!-- Clock Actions -->
+    <div class="bg-gray-900 border border-yellow-500 rounded p-4 mb-4">
+        <form method="POST" class="flex flex-col sm:flex-row gap-2">
+
+            <?php if(!$today): ?>
+                <button name="clock_in"
+                        class="bg-yellow-500 text-black px-4 py-2 rounded font-semibold">
+                    Clock In
+                </button>
+
+            <?php elseif($today && !$today['clock_out']): ?>
+                <button name="clock_out"
+                        class="bg-red-600 text-white px-4 py-2 rounded font-semibold">
+                    Clock Out
+                </button>
+
+            <?php else: ?>
+                <p class="text-green-500 font-semibold">
+                    Attendance Completed ✅
+                </p>
+            <?php endif; ?>
+
         </form>
-        <form method="POST">
-            <button type="submit" name="clock_out" class="bg-911-yellow text-911-black px-6 py-3 rounded-lg font-bold hover:brightness-110 transition">Clock Out</button>
-        </form>
     </div>
 
-    <!-- Attendance table -->
-    <div class="overflow-x-auto">
-        <table class="min-w-full bg-911-black border border-911-yellow rounded-lg">
-            <thead>
-                <tr class="text-911-yellow">
-                    <th class="px-4 py-2 border-b border-911-yellow">Clock In</th>
-                    <th class="px-4 py-2 border-b border-911-yellow">Clock Out</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach($attendance as $a): ?>
-                <tr class="text-911-gray">
-                    <td class="px-4 py-2 border-b border-911-yellow"><?= $a['clock_in'] ?></td>
-                    <td class="px-4 py-2 border-b border-911-yellow"><?= $a['clock_out'] ?? '-' ?></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+    <!-- Attendance History -->
+    <div class="bg-gray-900 border border-yellow-500 rounded p-4">
+        <h2 class="font-semibold text-yellow-400 mb-2">
+            Attendance History (This Month)
+        </h2>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-black text-yellow-400">
+                    <tr>
+                        <th class="px-3 py-2 text-left">Date</th>
+                        <th class="px-3 py-2 text-left">In</th>
+                        <th class="px-3 py-2 text-left">Out</th>
+                        <th class="px-3 py-2 text-left">Pay</th>
+                        <th class="px-3 py-2 text-left">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php
+                $rows = $conn->query("
+                    SELECT * FROM attendance
+                    WHERE user_id=$user_id
+                    AND MONTH(clock_in)=MONTH(CURDATE())
+                    AND YEAR(clock_in)=YEAR(CURDATE())
+                ");
+                while($r=$rows->fetch_assoc()):
+                ?>
+                    <tr class="border-b border-gray-700">
+                        <td class="px-3 py-2"><?= date('d M',strtotime($r['clock_in'])) ?></td>
+                        <td class="px-3 py-2"><?= date('H:i',strtotime($r['clock_in'])) ?></td>
+                        <td class="px-3 py-2">
+                            <?= $r['clock_out'] ? date('H:i',strtotime($r['clock_out'])) : '-' ?>
+                        </td>
+                        <td class="px-3 py-2">
+                            <?= number_format($r['daily_pay'],2) ?>
+                        </td>
+                        <td class="px-3 py-2">
+                            <?= $r['confirmed']
+                                ? "<span class='text-green-500'>Confirmed</span>"
+                                : "<span class='text-yellow-400'>Pending</span>" ?>
+                        </td>
+                    </tr>
+                <?php endwhile; ?>
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    <div class="text-center mt-6">
-        <a href="logout.php" class="inline-block bg-gray-800 text-911-yellow px-6 py-3 rounded-lg font-bold hover:brightness-110 transition">Logout</a>
-    </div>
 </div>
-
 </body>
 </html>

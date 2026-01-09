@@ -26,9 +26,10 @@ $employee_search = $conn->real_escape_string($_GET['employee_search'] ?? '');
 if(isset($_POST['add_inventory'])){
     $item_name = $conn->real_escape_string($_POST['item_name']);
     $quantity = intval($_POST['quantity']);
+    $cost = floatval($_POST['cost']);
     $branch_id_post = intval($_POST['branch_id']);
     
-    $conn->query("INSERT INTO inventory (item_name, quantity, branch_id, added_by) VALUES ('$item_name', $quantity, $branch_id_post, $manager_id)");
+    $conn->query("INSERT INTO inventory (item_name, quantity, branch_id, added_by, cost) VALUES ('$item_name', $quantity, $branch_id_post, $manager_id, $cost)");
     $inventory_id = $conn->insert_id;
     if($inventory_id > 0){
         $conn->query("INSERT INTO inventory_log (inventory_id, action, quantity_before, quantity_after, changed_by) VALUES ($inventory_id,'added',0,$quantity,$manager_id)");
@@ -39,10 +40,11 @@ if(isset($_POST['add_inventory'])){
 if(isset($_POST['edit_inventory']) && isset($_POST['id'])){
     $inv_id = intval($_POST['id']);
     $new_qty = intval($_POST['quantity']);
+    $new_cost = floatval($_POST['cost']);
     $inv_res = $conn->query("SELECT quantity FROM inventory WHERE id=$inv_id");
     if($inv_res->num_rows > 0){
         $old_qty = $inv_res->fetch_assoc()['quantity'];
-        $conn->query("UPDATE inventory SET quantity=$new_qty WHERE id=$inv_id");
+        $conn->query("UPDATE inventory SET quantity=$new_qty, cost=$new_cost WHERE id=$inv_id");
         $conn->query("INSERT INTO inventory_log (inventory_id, action, quantity_before, quantity_after, changed_by) VALUES ($inv_id,'updated',$old_qty,$new_qty,$manager_id)");
     }
     header("Location: manager_dashboard.php?tab=inventory"); exit;
@@ -116,6 +118,9 @@ while($row=$res->fetch_assoc()){$attendance_chart[$row['date']]=$row['total'];}
 <html>
 <head>
 <title>Manager Dashboard</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.jpg">
+<meta name="theme-color" content="#d6b928ff">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -207,6 +212,7 @@ tailwind.config={theme:{extend:{colors:{'911-yellow':'#FFD700','911-black':'#121
             <form method="POST" class="flex flex-col sm:flex-row gap-2 flex-wrap">
                 <input type="text" name="item_name" placeholder="Item Name" required class="px-2 py-1 rounded text-black flex-1">
                 <input type="number" name="quantity" placeholder="Quantity" required class="px-2 py-1 rounded text-black w-32">
+                <input type="number" name="cost" placeholder="Cost" step="0.01" required class="px-2 py-1 rounded text-black w-32">
                 <select name="branch_id" required class="px-2 py-1 rounded text-black w-40">
                     <?php 
                     $branches_list = $conn->query("SELECT * FROM branches");
@@ -225,9 +231,9 @@ tailwind.config={theme:{extend:{colors:{'911-yellow':'#FFD700','911-black':'#121
             <table class="min-w-full text-911-gray">
                 <thead>
                     <tr class="text-911-yellow">
-                        <th class="px-2 py-1">ID</th>
                         <th class="px-2 py-1">Item</th>
                         <th class="px-2 py-1">Qty</th>
+                        <th class="px-2 py-1">Cost</th>
                         <th class="px-2 py-1">Branch</th>
                         <th class="px-2 py-1">Added By</th>
                         <th class="px-2 py-1">Action</th>
@@ -236,15 +242,16 @@ tailwind.config={theme:{extend:{colors:{'911-yellow':'#FFD700','911-black':'#121
                 <tbody>
                     <?php while($i=$inventory->fetch_assoc()): ?>
                     <tr>
-                        <td class="px-2 py-1"><?= $i['id'] ?></td>
                         <td class="px-2 py-1"><?= $i['item_name'] ?></td>
                         <td class="px-2 py-1"><?= $i['quantity'] ?></td>
+                        <td class="px-2 py-1"><?= number_format($i['cost'], 2) ?></td>
                         <td class="px-2 py-1"><?= $i['branch_name'] ?></td>
                         <td class="px-2 py-1"><?= $i['added_by_name'] ?></td>
                         <td class="px-2 py-1 flex gap-2 flex-wrap">
                             <form method="POST" class="flex gap-1">
                                 <input type="hidden" name="id" value="<?= $i['id'] ?>">
                                 <input type="number" name="quantity" value="<?= $i['quantity'] ?>" class="px-1 py-1 text-black w-16" required>
+                                <input type="number" name="cost" value="<?= $i['cost'] ?>" step="0.01" class="px-1 py-1 text-black w-20" required>
                                 <button type="submit" name="edit_inventory" class="bg-911-yellow text-911-black px-2 rounded">Edit</button>
                             </form>
                             <form method="POST">
@@ -301,6 +308,12 @@ new Chart(document.getElementById('attendanceChart'),{
     options:{ responsive:true, plugins:{ legend:{ display:false } }, scales:{ x:{ ticks:{ color:'#FFD700' }, grid:{ color:'#444' } }, y:{ ticks:{ color:'#FFD700' }, grid:{ color:'#444' } } } }
 });
 </script>
-
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js')
+    .then(() => console.log('Service Worker Registered'))
+    .catch(err => console.log('Service Worker failed:', err));
+}
+</script>
 </body>
 </html>

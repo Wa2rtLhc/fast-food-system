@@ -32,6 +32,9 @@ if(isset($_POST['login'])){
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>911 Fast Food System</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.jpg">
+<meta name="theme-color" content="#d6b928ff">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
@@ -83,6 +86,12 @@ body {
 <footer class="text-center p-4 bg-911-black text-911-gray">
     &copy; <?= date('Y') ?> 911 Fast Food. All Rights Reserved.
 </footer>
-
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js')
+    .then(() => console.log('Service Worker Registered'))
+    .catch(err => console.log('Service Worker failed:', err));
+}
+</script>
 </body>
 </html>

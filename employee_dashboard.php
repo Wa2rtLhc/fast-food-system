@@ -51,6 +51,9 @@ $pay_summary = $conn->query("SELECT IFNULL(SUM(daily_pay),0) AS total FROM atten
 <head>
 <meta charset="UTF-8">
 <title>Employee Dashboard</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.jpg">
+<meta name="theme-color" content="#d6b928ff">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -60,7 +63,10 @@ $pay_summary = $conn->query("SELECT IFNULL(SUM(daily_pay),0) AS total FROM atten
     <div>
         <h1 class="text-xl font-bold text-yellow-400">Employee Dashboard</h1>
         <p class="text-sm text-gray-400"><?= htmlspecialchars($user['username']) ?> • <?= htmlspecialchars($user['branch']) ?></p>
-    </div>
+</div>
+<button id="installBtn" class="hidden fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded shadow-lg">
+    Install App
+</button>
     <a href="logout.php" class="text-red-500 text-sm">Logout</a>
 </div>
 
@@ -145,5 +151,31 @@ $pay_summary = $conn->query("SELECT IFNULL(SUM(daily_pay),0) AS total FROM atten
 </div>
 
 </div>
+<script>
+let deferredPrompt;
+const installBtn = document.getElementById('installBtn');
+installBtn.style.display = 'none';
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.style.display = 'inline-block';
+});
+
+installBtn.addEventListener('click', () => {
+  installBtn.style.display = 'none';
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(choice => {
+    deferredPrompt = null;
+  });
+});
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js')
+    .then(() => console.log('Service Worker Registered'))
+    .catch(err => console.log('Service Worker failed:', err));
+}
+</script>
 </body>
 </html>

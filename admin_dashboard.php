@@ -30,7 +30,8 @@ $emp_report_search = $conn->real_escape_string($_GET['emp_report_search'] ?? '')
 
 // Employees
 $employees = $conn->query("SELECT id, username, phone, national_id, daily_rate FROM users WHERE role='employee' AND username LIKE '%$employee_search%' ORDER BY id DESC");
-
+//Staff Accounts
+$staff = $conn->query("SELECT id, username, phone, role, national_id, status FROM users ORDER BY id DESC");
 // Inventory
 $inventory_query = "SELECT i.*, b.name as branch_name, u.username as added_by_name 
                     FROM inventory i 
@@ -145,7 +146,7 @@ tailwind.config={theme:{extend:{colors:{'911-yellow':'#FFD700','911-black':'#121
     <!-- Tabs -->
     <div class="flex flex-wrap gap-2 mb-4">
         <?php
-        $tabs=['employees'=>'Employees','inventory'=>'Inventory','inventory_logs'=>'Inventory Logs','employee_reports'=>'Employee Reports','inventory_reports'=>'Inventory Reports'];
+        $tabs=['employees'=>'Employees','staff'=>'Staff Accounts','inventory'=>'Inventory','inventory_logs'=>'Inventory Logs','employee_reports'=>'Employee Reports','inventory_reports'=>'Inventory Reports'];
         foreach($tabs as $key=>$label){
             $active_class=$active_tab==$key?'bg-911-yellow text-911-black':'bg-911-black text-911-yellow border border-911-yellow';
             echo "<a href='?tab=$key' class='px-4 py-2 rounded font-semibold $active_class'>$label</a>";
@@ -192,7 +193,58 @@ tailwind.config={theme:{extend:{colors:{'911-yellow':'#FFD700','911-black':'#121
                 </tbody>
             </table>
         </div>
+<?php elseif($active_tab=='staff'): ?>
 
+<div class="grid md:grid-cols-2 gap-4 mb-4">
+
+<!-- ADD USER -->
+<div class="bg-911-black border border-911-yellow p-4 rounded">
+<h2 class="text-911-yellow text-xl mb-2">Add Staff</h2>
+
+<form id="addStaffForm" class="space-y-2">
+<input name="username" placeholder="Username" required class="w-full p-2 text-black rounded">
+<input name="phone" placeholder="Phone" class="w-full p-2 text-black rounded">
+<input name="national_id" placeholder="National ID" required class="w-full p-2 text-black rounded">
+<select name="role" class="w-full p-2 text-black rounded">
+<option value="employee">Employee</option>
+<option value="manager">Manager</option>
+<option value="admin">Admin</option>
+</select>
+<button class="bg-911-yellow text-black px-4 py-2 rounded w-full">Create User</button>
+</form>
+<div id="pinResult" class="mt-2 text-911-yellow"></div>
+</div>
+
+<!-- STAFF LIST -->
+<div class="bg-911-black border border-911-yellow p-4 rounded">
+<h2 class="text-911-yellow text-xl mb-2">All Staff</h2>
+
+<table class="w-full text-sm">
+<tr class="text-911-yellow">
+<th>User</th><th>National ID</th><th>Role</th><th>Status</th><th>Actions</th>
+</tr>
+
+<?php while($s=$staff->fetch_assoc()): ?>
+<tr>
+<td><?= $s['username'] ?></td>
+<td><?= $s['national_id'] ?></td>
+<td><?= $s['role'] ?></td>
+<td><?= $s['status'] ?></td>
+<td class="space-x-1">
+<button onclick="resetPin(<?= $s['id'] ?>)" class="bg-blue-600 px-2 py-1 rounded">Reset PIN</button>
+
+<?php if($s['status']=='active'): ?>
+<button onclick="toggleUser(<?= $s['id'] ?>,'disabled')" class="bg-red-600 px-2 py-1 rounded">Disable</button>
+<?php else: ?>
+<button onclick="toggleUser(<?= $s['id'] ?>,'active')" class="bg-green-600 px-2 py-1 rounded">Enable</button>
+<?php endif; ?>
+
+</td>
+</tr>
+<?php endwhile; ?>
+</table>
+</div>
+</div>
     <?php elseif($active_tab=='inventory'): ?>
         <form method="GET" class="mb-2 flex gap-2 flex-wrap">
             <input type="hidden" name="tab" value="inventory">
@@ -357,7 +409,31 @@ function updateRate(empId){
         if(res.success) location.reload();
     }, 'json');
 }
+//Staff accounts
+$("#addStaffForm").submit(function(e){
+ e.preventDefault();
+ $.post("add_staff.php", $(this).serialize(), function(res){
+    $("#pinResult").html("PIN: <b>"+res.pin+"</b>");
+ },'json');
+});
 
+function toggleUser(id,status){
+ $.post("toggle_user.php",{id:id,status:status},()=>location.reload());
+}
+
+
+//reset pin
+function resetPin(empId){
+    if(!confirm("Are you sure you want to reset this employee's PIN?")) return;
+
+    $.post('reset_pin.php', {user_id: empId}, function(res){
+        if(res.success){
+            alert("New PIN: " + res.pin + "\nShare this with the employee securely.");
+        } else {
+            alert("Failed to reset PIN. Try again.");
+        }
+    }, 'json');
+}
 // Charts
 const inventoryData=<?= json_encode($inventory_chart) ?>;
 const attendanceData=<?= json_encode($attendance_chart) ?>;
@@ -381,5 +457,6 @@ if ('serviceWorker' in navigator) {
     .catch(err => console.log('Service Worker failed:', err));
 }
 </script>
+
 </body>
 </html>

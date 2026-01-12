@@ -1,5 +1,5 @@
 <?php
-include 'config.php'; // make sure config.php does NOT call session_start() if already called
+include 'config.php'; 
 
 // Start session only if not already started
 if(session_status() === PHP_SESSION_NONE){
@@ -9,17 +9,27 @@ if(session_status() === PHP_SESSION_NONE){
 $login_error = '';
 if(isset($_POST['login'])){
     $username = $conn->real_escape_string($_POST['username']);
-    $pin = $conn->real_escape_string($_POST['pin']);
-    $res = $conn->query("SELECT * FROM users WHERE username='$username' AND pin='$pin'");
-    if($res->num_rows === 1){
+    $pin = $_POST['pin']; // no need to escape, we won't put it directly in SQL
+
+    // Fetch user by username and status
+    $res = $conn->query("SELECT * FROM users WHERE username='$username' AND status='active' LIMIT 1");
+
+    if($res && $res->num_rows === 1){
         $user = $res->fetch_assoc();
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['role'] = $user['role'];
-        // Redirect based on role
-        if($user['role']=='admin') header("Location: admin_dashboard.php");
-        elseif($user['role']=='manager') header("Location: manager_dashboard.php");
-        else header("Location: employee_dashboard.php");
-        exit;
+
+        // Verify PIN
+        if(password_verify($pin, $user['pin'])){
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['role'] = $user['role'];
+
+            // Redirect based on role
+            if($user['role']=='admin') header("Location: admin_dashboard.php");
+            elseif($user['role']=='manager') header("Location: manager_dashboard.php");
+            else header("Location: employee_dashboard.php");
+            exit;
+        } else {
+            $login_error = "Invalid username or PIN";
+        }
     } else {
         $login_error = "Invalid username or PIN";
     }
